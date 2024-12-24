@@ -1,5 +1,12 @@
+from io import StringIO
 import tkinter as tk
+from tkinter import messagebox
+from tkinter.filedialog import askopenfilename
+from tkinter.filedialog import asksaveasfilename
 from tkinter import filedialog, messagebox
+import subprocess
+import shutil
+import os
 from pycdlib import PyCdlib
 try:
     from cStringIO import StringIO as BytesIO
@@ -15,6 +22,7 @@ class FSProcessorApp:
         # Dados carregados do arquivo .fs
         self.system_config=""
         self.system_name=""
+        self.files_to_exe=b''
         self.files_to_process = None        
         # Botão para carregar arquivo .fs
         self.load_button = tk.Button(
@@ -33,10 +41,19 @@ class FSProcessorApp:
             root, text="", bg="black", fg="white", wraplength=350
         )
         self.status_label.pack(pady=10)
-
+    def execute_command(self, command,show:bool):
+        try:
+            
+            result = subprocess.check_output(command, stderr=subprocess.STDOUT, shell=True, text=True)
+            result = result.strip()
+            if show and result!="":
+                messagebox.showerror("error:",result)
+        except subprocess.CalledProcessError as e:
+            if show:
+                messagebox.showerror("error:",e)
     def load_fs_file(self):
         file_path = filedialog.askopenfilename(
-            filetypes=[("bin Files", "*.bin"), ("All Files", "*.*")]
+            filetypes=[("c Files", "*.c"), ("All Files", "*.*")]
         )
         if not file_path:
             return
@@ -44,37 +61,41 @@ class FSProcessorApp:
         try:
             system_name=file_path
             splitdir=file_path.split("/")
-            system_name=splitdir[len(splitdir)-1]
-            systempoint=system_name.find(".")
+            file_path=splitdir[len(splitdir)-1]
             
-            if systempoint>-1:
-                system_name=system_name[:systempoint].upper()
-            self.system_name=system_name
             
-            system_name=file_path.replace(".bin",".cfg")
-            with open(file_path, "rb") as f:
+
+            self.system_name="SYSTEM"
+            print(file_path)
+            self.execute_command("nasm mysys.s -o /tmp/mysys.o",False)
+            self.execute_command("bcc -c -Md libdos.c -o libdos.a",False)
+            self.execute_command("bcc -c -Md libdos.c -o /tmp/libdos.a",False)
+            fff=f'bcc -x -i -L -Md "$1" -o /tmp/mysys.com'.replace("$1",file_path)
+            self.execute_command(fff,True)
+            self.execute_command("cat /tmp/mysys.o /tmp/mysys.com > /tmp/sys.bin",False)
+            
+            with open("/tmp/sys.bin", "rb") as f:
                 content = f.read()
-                self.system_config=content
-            with open(file_path, "rb") as f:
-                content = f.read()
-                self.files_to_process = content
-            
+                self.files_to_process=content
+                self.files_to_exe = content
+                       
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load .fs file: {e}")
             self.status_label.config(text="Failed to load .fs file.")
 
     def save_iso_file(self):
-        if not self.files_to_process:
-            messagebox.showerror("Error", "No data loaded. Please load a .fs file first.")
-            return
-
+        
+       
+        f1=open("hello.c32","wb")
+        f1.write(self.files_to_exe)
+        f1.close()
         save_path = filedialog.asksaveasfilename(
             defaultextension=".iso", filetypes=[("ISO Files", "*.iso"), ("All Files", "*.*")]
         )
         if not save_path:
             return
-
+        
         try:
             iso = PyCdlib()
             iso.new()
@@ -88,24 +109,24 @@ class FSProcessorApp:
             iso.add_directory('/BOOT')
             
             iso.add_directory('/BOOT/GRUB')
-            print(self.system_name)
+            
             iso.add_directory('/BOOT/'+self.system_name+"")
             
             bootstr =self.files_to_process
             iso.add_fp(BytesIO(bootstr), len(bootstr), '/BOOT/'+self.system_name+"/"+self.system_name+".BIN")
-            bootstr =self.system_config
-            iso.add_fp(BytesIO(bootstr), len(bootstr), '/BOOT/'+self.system_name+"/"+self.system_name+".CFG")
-           
+            
             iso.write(save_path)
             iso.close()
 
             messagebox.showinfo("Success", f"ISO file saved at {save_path}")
             self.status_label.config(text="ISO file created successfully.")
+            fff=f'qemu-system-x86_64 -cdrom "$1"'.replace("$1",save_path)
+            self.execute_command(fff,False)
+
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to create ISO file: {e}")
             self.status_label.config(text="Failed to create ISO file.")
-
 
 if __name__ == "__main__":
     root = tk.Tk()
