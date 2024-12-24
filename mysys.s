@@ -1,23 +1,16 @@
-; hello.asm
-[BITS 16]          ; Configuração para 16 bits (modo real)
-[ORG 0x7C00]       ; Define o endereço de carregamento
+[BITS 16]
+[ORG 0x7C00]          ; Endereço de carregamento do bootloader
 
 start:
-    mov ah, 0x0E    ; Função de imprimir caractere do BIOS
-    mov si, msg     ; Ponteiro para a mensagem
+    ; Configura os segmentos
+    mov ax, 0x7d0     ; Base do setor de boot (0x7C00 / 16)
+    mov ds, ax        ; Configurar DS
+    mov es, ax        ; Configurar ES
+    mov ss, ax        ; Configurar SS
+    mov sp, 0xffff    ; Pilha no fim do setor de boot
+    ; Saltar para o início do programa .com
+    jmp 0x7d0:0x0100  ; O programa .com espera começar em 0x0100
 
-.print_char:
-    lodsb           ; Carrega o próximo byte de [SI] para AL
-    or al, al       ; Verifica se é o fim da string (0)
-    jz .hang        ; Se sim, termina
-    int 0x10        ; Chama o BIOS para imprimir
-    jmp .print_char ; Continua imprimindo
-
-.hang:
-    cli             ; Desabilita interrupções
-    hlt             ; Entra em estado de espera
-
-msg db "Hello, World!", 0 ; Mensagem a ser impressa (terminada em 0)
-
-times 510-($-$$) db 0 ; Preenche até 510 bytes
-dw 0xAA55             ; Assinatura do setor de boot (0xAA55)
+times 510-($-$$) db 0 ; Preencher até 510 bytes
+dw 0xAA55             ; Assinatura do setor de boot
+coms:
